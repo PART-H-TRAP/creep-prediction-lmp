@@ -78,6 +78,38 @@ def predict(stress, T_C, C, poly, lmp_range):
     return t_r, extrapolating
 
 
+R = 8.314  # J/mol/K
+
+
+def creep_mechanism(stress, T_C, C, poly):
+    """Read the material's apparent creep mechanism off the fitted curve.
+
+    n = -d(log10 t_r)/d(log10 stress) at fixed T. Minimum creep rate is
+    roughly proportional to 1/t_r (Monkman-Grant), so n approximates the
+    stress exponent in Norton's law (rate ~ stress^n) and places the
+    material on the standard deformation-mechanism map. Q = 2.303*R*LMP
+    follows directly from the Arrhenius assumption LMP is built on, and is
+    the apparent activation energy for rupture at that condition. Both are
+    inferred from the rupture-life trend, not measured independently, so
+    treat them as indicative, not as substitutes for strain-rate or
+    diffusion data.
+    """
+    T_K = T_C + 273.15
+    x, h = np.log10(stress), 0.01
+    n = -(predict_log10_tr(10 ** (x + h), T_K, C, poly) - predict_log10_tr(10 ** (x - h), T_K, C, poly)) / (2 * h)
+    Q = 2.303 * R * poly(x) / 1000  # kJ/mol
+
+    if n < 1.5:
+        regime = "diffusional creep (Nabarro-Herring/Coble) -- rate nearly linear in stress"
+    elif n < 3:
+        regime = "grain-boundary sliding / mixed diffusional-dislocation regime"
+    elif n <= 8:
+        regime = "dislocation climb-controlled power-law creep (classic secondary-creep regime)"
+    else:
+        regime = "power-law breakdown -- approaching yield-dominated plastic flow"
+    return float(n), float(Q), regime
+
+
 def plot(T_K, stress, t_r, C, degree, poly, rmse, prefix):
     import matplotlib
     matplotlib.use("Agg")
@@ -115,12 +147,16 @@ def main():
     print(f"{len(t_r)} points | C = {C:.2f} | degree {degree} | "
           f"LOOCV RMSE = {rmse:.3f} log10(h) -> scatter factor {10**rmse:.2f}x")
     print(f"Training LMP range: {lmp_range[0]:.0f}-{lmp_range[1]:.0f} (predictions outside this are extrapolations)")
+    print("Note: n (stress exponent) is the reliable mechanism indicator below; Q tracks C 1:1 and C was "
+          "fit for predictive accuracy, not pinned to known diffusion data, so treat Q as approximate.")
 
     queries = [(args.stress, args.temp)] if args.stress and args.temp else [(300, 700), (150, 760), (42, 870)]
     for s, t in queries:
         life, extrap = predict(s, t, C, poly, lmp_range)
+        n, Q, regime = creep_mechanism(s, t, C, poly)
         flag = "  [EXTRAPOLATION]" if extrap else ""
         print(f"{s:>6.1f} MPa @ {t:>6.1f} C -> {life:,.1f} h ({life/8760:.2f} yr){flag}")
+        print(f"    apparent stress exponent n = {n:.1f}, activation energy Q = {Q:.0f} kJ/mol -> {regime}")
 
     if args.plot:
         plot(T_K, stress, t_r, C, degree, poly, rmse, "lmp")

@@ -34,6 +34,25 @@ touching the code.
   with published LMP accuracy benchmarks.
 - Predictions outside the training LMP range are flagged as extrapolations.
 
+## Mechanism diagnostics
+
+Each prediction also reports:
+
+- **Apparent stress exponent n** — the local slope of log10(rupture time) vs
+  log10(stress) at fixed T. Since minimum creep rate is roughly
+  proportional to 1/t_r (Monkman-Grant), n approximates the exponent in
+  Norton's law (rate ~ stress^n), placing the material on the standard
+  deformation-mechanism map: n < 1.5 diffusional creep, 1.5–3 grain-boundary
+  sliding / mixed, 3–8 dislocation climb-controlled power-law creep, >8
+  power-law breakdown.
+- **Apparent activation energy Q** = 2.303·R·LMP, following directly from
+  the Arrhenius assumption the LMP rests on.
+
+Both are read off the fitted curve, not measured independently. Q scales
+directly with the fitted C (which is optimized for predictive accuracy,
+not pinned to known diffusion data), so treat Q as approximate — n is the
+more robust diagnostic.
+
 ## Usage
 
 ```bash
