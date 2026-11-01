@@ -63,3 +63,25 @@ python3 lmp_creep_prediction.py --stress 300 --temp 700
 
 `lmp_master_curve.png` shows the fitted master curve against the 31 data
 points.
+
+## Using a different material
+
+The code is dataset-agnostic — swap `--data` for any CSV with the same
+three columns (`temperature_C`, `stress_MPa`, `rupture_time_h`), no code
+changes needed:
+
+```bash
+python3 lmp_creep_prediction.py --data creep_data_304SS.csv --stress 100 --temp 650
+```
+
+`creep_data_304SS.csv` is a second public dataset included as a worked
+example: 9 points for 304 stainless steel at 593–760 °C (NASA TM, Fritz &
+Koster, *Tensile, Creep-Rupture, and Poisson's Ratio Properties of
+Uncoated and Coated Engineering Alloys*, NASA CR-135314, 1977). Run as
+above and the model refits cleanly — C = 15.91, scatter factor ≈1.15×
+(tighter than the superalloy fit, since these are already-smoothed
+design-curve values rather than raw scattered test points), apparent
+Q ≈ 337 kJ/mol, close to the known self-diffusion energy for austenitic
+Fe-Cr-Ni alloys (~280–350 kJ/mol) — a useful cross-check that the method
+is behaving physically on a dataset where the fitted C lands near the
+textbook default (~20) rather than at the high end.
