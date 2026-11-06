@@ -10,10 +10,10 @@ tests from many (stress, temperature) combinations onto one curve. Fit that
 curve once from short tests, then read off rupture life at any stress/
 temperature pair.
 
-Data: 31 public creep-rupture tests on a Ni-base superalloy, 650-1095 degC,
-10-480 MPa (Hertzberg, "Deformation and Fracture Mechanics of Engineering
-Materials", Problem 5.3). Swap creep_data.csv for a larger set (e.g. NIMS
-Creep Data Sheets) without touching the code below.
+Data: 31 public creep-rupture tests on a superalloy (grade not stated in the
+source), 650-1095 degC, 10-480 MPa (Hertzberg, "Deformation and Fracture
+Mechanics of Engineering Materials", Problem 5.3). Swap creep_data.csv for a
+larger set (e.g. NIMS Creep Data Sheets) without touching the code below.
 """
 
 import argparse
@@ -68,6 +68,32 @@ def fit_model(T_K, stress, t_r, degrees=(1, 2, 3)):
         if best is None or rmse < best[2]:
             best = (res.x, d, rmse)
     return best  # C, degree, loocv_rmse
+
+
+def nested_loocv_rmse(T_K, stress, t_r):
+    """Unbiased accuracy: C and degree are re-selected inside every fold, so the
+    held-out point never influences the choice of C or degree. The plain LOOCV
+    returned by fit_model is slightly optimistic because it is also the number
+    that C and degree were tuned to minimize."""
+    errors = []
+    for i in range(len(t_r)):
+        keep = np.arange(len(t_r)) != i
+        C, d, _ = fit_model(T_K[keep], stress[keep], t_r[keep])
+        poly = fit_curve(T_K[keep], stress[keep], t_r[keep], C, d)
+        errors.append(predict_log10_tr(stress[i], T_K[i], C, poly) - np.log10(t_r[i]))
+    return float(np.sqrt(np.mean(np.square(errors))))
+
+
+def replicate_scatter(T_K, stress, t_r):
+    """Pooled SD of log10(t_r) between repeat tests at identical (T, stress).
+    This is test-to-test scatter in the material itself, so no curve fit can
+    predict better than this. None if the data has no repeat tests."""
+    groups = {}
+    for T, s, y in zip(T_K, stress, np.log10(t_r)):
+        groups.setdefault((T, s), []).append(y)
+    reps = [np.array(v) for v in groups.values() if len(v) > 1]
+    df = sum(len(v) - 1 for v in reps)
+    return float(np.sqrt(sum(((v - v.mean()) ** 2).sum() for v in reps) / df)) if df else None
 
 
 def predict(stress, T_C, C, poly, lmp_range):
@@ -140,12 +166,17 @@ def main():
     args = ap.parse_args()
 
     T_K, stress, t_r = load_data(args.data)
-    C, degree, rmse = fit_model(T_K, stress, t_r)
+    C, degree, _ = fit_model(T_K, stress, t_r)
+    rmse = nested_loocv_rmse(T_K, stress, t_r)
+    floor = replicate_scatter(T_K, stress, t_r)
     poly = fit_curve(T_K, stress, t_r, C, degree)
     lmp_range = (lmp(T_K, t_r, C).min(), lmp(T_K, t_r, C).max())
 
     print(f"{len(t_r)} points | C = {C:.2f} | degree {degree} | "
-          f"LOOCV RMSE = {rmse:.3f} log10(h) -> scatter factor {10**rmse:.2f}x")
+          f"nested LOOCV RMSE = {rmse:.3f} log10(h) -> scatter factor {10**rmse:.2f}x")
+    if floor:
+        print(f"Repeat tests at identical conditions scatter by {10**floor:.2f}x on their own, "
+              f"so that is the best any model can do on this data.")
     print(f"Training LMP range: {lmp_range[0]:.0f}-{lmp_range[1]:.0f} (predictions outside this are extrapolations)")
     print("Note: n (stress exponent) is the reliable mechanism indicator below; Q tracks C 1:1 and C was "
           "fit for predictive accuracy, not pinned to known diffusion data, so treat Q as approximate.")
